@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"mj/algorithm"
 )
 
 type Player struct {
@@ -18,22 +19,27 @@ func (p *Player) ReceiveMsg() {
 	currentGame := p.CurrentGame
 	game := g.GetGameById(currentGame)
 	channel := game.GetNewChanById(p.Id).Ch
-
+	handTiles := game.GetHandTileByPlayerId(p.Id)
 	for msg := range channel {
 		if msg.MessageType == 4 {
-			handTiles := game.GetHandTileByPlayerId(p.Id)
+
 			fmt.Println(fmt.Sprintf("抓牌前，用户 %s 当前手牌：%s", p.Id, game.TilesToString(handTiles)))
 			newHandTiles := append(handTiles, msg.Tile)
-			//todo check win
-			game.SetHandTileByPlayerId(p.Id, newHandTiles)
-			fmt.Println(fmt.Sprintf("弃牌前，用户 %s 当前手牌：%s", p.Id, game.TilesToString(newHandTiles)))
+			win := algorithm.CheckWin(game.TilesToInt(newHandTiles))
+			if win {
+				fmt.Println("我胡了，当前手牌是:", game.TilesToString(newHandTiles))
+				game.Stop()
+			} else {
+				game.SetHandTileByPlayerId(p.Id, newHandTiles)
+				fmt.Println(fmt.Sprintf("弃牌前，用户 %s 当前手牌：%s", p.Id, game.TilesToString(newHandTiles)))
 
-			p.DropTile()
-		} else if msg.MessageType == 5 {
-			fmt.Println(fmt.Sprintf("我是用户 %s ,接收到接收到用户 %s 的弃牌信息，弃的牌是 %d", p.Id, msg.SourcePlayerId, msg.Tile.Number))
-		
+				p.DropTile()
+			}
+		} else if msg.MessageType == 3 {
+			fmt.Println(fmt.Sprintf("我是用户 %s ,用户 %s 的弃牌 %d,我胡了!", p.Id, msg.SourcePlayerId, msg.Tile.Number))
+			fmt.Println("当前手牌是:", game.TilesToString(handTiles))
+			game.Stop()
 		}
-
 	}
 
 }

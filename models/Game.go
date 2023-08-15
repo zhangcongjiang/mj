@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	uuid "github.com/satori/go.uuid"
+	"mj/algorithm"
 	"sort"
 	"strconv"
 	"strings"
@@ -88,40 +89,6 @@ func (g *Game) Start() {
 
 }
 
-func (g *Game) GetGameById(gameId string) Game {
-	return gameCache[gameId]
-}
-func (g *Game) GetNewChanById(playerId string) ChanContainer {
-	return newTileChanCache[playerId]
-}
-
-func (g *Game) GetDropTileByPlayerId(playerId string) []Tile {
-	return playerDropTile[playerId]
-}
-
-func (g *Game) GetShowTileByPlayerId(playerId string) []Tile {
-	return playerShowTile[playerId]
-}
-
-func (g *Game) GetHandTileByPlayerId(playerId string) []Tile {
-	return playerHandTile[playerId]
-}
-
-func (g *Game) SetShowTileByPlayerId(playerId string, tiles []Tile) {
-	playerShowTile[playerId] = tiles
-}
-func (g *Game) SetDropTileByPlayerId(playerId string, tiles []Tile) {
-	playerDropTile[playerId] = tiles
-}
-
-func (g *Game) SetHandTileByPlayerId(playerId string, tiles []Tile) {
-	playerHandTile[playerId] = tiles
-}
-
-func (g *Game) GetDropChanById(gameId string) ChanContainer {
-	return dropTileChanCache[gameId]
-}
-
 func (g *Game) Shuffler(target string, tile Tile) {
 	// 处理给player发牌逻辑
 }
@@ -134,37 +101,46 @@ func (g *Game) ReceiveMsg() {
 			//接收到弃牌信息
 			currentPlayer := msg.TargetPlayerId
 
-			tileQueue := g.TileQueue
-			if tileQueue.IsEmpty() {
-				fmt.Println("游戏结束，平局")
-				g.Stop()
-			}
 			next := g.getNextPlayerId(currentPlayer)
+
 			for {
 				if next != currentPlayer {
-					dropMsg := TileMessage{
-						MessageType:    5,
-						SourcePlayerId: currentPlayer,
-						TargetPlayerId: next,
-						Tile:           msg.Tile,
+					checkTiles := append(playerHandTile[next], msg.Tile)
+					checkTiles = g.SortTiles(checkTiles)
+
+					if algorithm.CheckWin(g.TilesToInt(checkTiles)) {
+						fmt.Println(fmt.Sprintf("用户 %s 可以胡牌，他的手牌是：%s", next, g.TilesToString(checkTiles)))
+						winMsg := TileMessage{
+							MessageType:    3,
+							SourcePlayerId: currentPlayer,
+							TargetPlayerId: next,
+							Tile:           msg.Tile,
+						}
+						channel := newTileChanCache[next].Ch
+						channel <- winMsg
+						time.Sleep(1 * time.Second)
 					}
-					channel := newTileChanCache[next].Ch
-					channel <- dropMsg
-					time.Sleep(1 * time.Second)
+
 				} else {
 					break
 				}
 				next = g.getNextPlayerId(next)
 			}
+			tileQueue := g.TileQueue
+			if tileQueue.IsEmpty() {
+				fmt.Println("游戏结束，平局")
+				g.Stop()
+			}
 
 			nextPlayerId := g.getNextPlayerId(currentPlayer)
+			newTile := tileQueue.Pop()
 			newTileMsg := TileMessage{
 				MessageType:    4,
 				TargetPlayerId: nextPlayerId,
-				Tile:           tileQueue.Pop(),
+				Tile:           newTile,
 			}
 			channel := newTileChanCache[nextPlayerId].Ch
-			fmt.Println(fmt.Sprintf("游戏管理员给用户 %s 发了一张牌：%d", nextPlayerId, msg.Tile.Number))
+			fmt.Println(fmt.Sprintf("游戏管理员给用户 %s 发了一张牌：%d", nextPlayerId, newTile.Number))
 			time.Sleep(time.Second * 1)
 			channel <- newTileMsg
 			g.TileQueue = tileQueue
@@ -219,4 +195,48 @@ func (g *Game) TilesToString(tiles []Tile) string {
 	handString := "手牌：" + strings.Join(tilesString, ", ")
 
 	return handString
+}
+
+func (g *Game) TilesToInt(tiles []Tile) []int {
+	var arr []int
+
+	for _, h := range tiles {
+		arr = append(arr, h.Number)
+	}
+
+	return arr
+}
+
+func (g *Game) GetGameById(gameId string) Game {
+	return gameCache[gameId]
+}
+func (g *Game) GetNewChanById(playerId string) ChanContainer {
+	return newTileChanCache[playerId]
+}
+
+func (g *Game) GetDropTileByPlayerId(playerId string) []Tile {
+	return playerDropTile[playerId]
+}
+
+func (g *Game) GetShowTileByPlayerId(playerId string) []Tile {
+	return playerShowTile[playerId]
+}
+
+func (g *Game) GetHandTileByPlayerId(playerId string) []Tile {
+	return playerHandTile[playerId]
+}
+
+func (g *Game) SetShowTileByPlayerId(playerId string, tiles []Tile) {
+	playerShowTile[playerId] = tiles
+}
+func (g *Game) SetDropTileByPlayerId(playerId string, tiles []Tile) {
+	playerDropTile[playerId] = tiles
+}
+
+func (g *Game) SetHandTileByPlayerId(playerId string, tiles []Tile) {
+	playerHandTile[playerId] = tiles
+}
+
+func (g *Game) GetDropChanById(gameId string) ChanContainer {
+	return dropTileChanCache[gameId]
 }
